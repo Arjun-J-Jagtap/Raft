@@ -1,0 +1,5 @@
+stress-logs/
+*.test
+*.out
+.idea/
+.vscode/
