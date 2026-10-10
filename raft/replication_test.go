@@ -329,6 +329,88 @@ func TestReplicationRPCCount(t *testing.T) {
 	}
 }
 
+// The Figure 8 scenario from §5.4.2, driven step by step rather than left to
+// random crashes, which almost never produce it. A leader that commits an
+// entry from an earlier term just because a majority stores it can have that
+// "committed" entry overwritten by a later leader. The cluster's applier
+// catches the overwrite as two servers applying different commands at index 2.
+//
+// The scenario needs a cut-off leader to keep believing it leads, as in the
+// paper. Implementations that step down without a quorum (check-quorum) skip.
+func TestReplicationPrevTermCommitRule(t *testing.T) {
+	const n = 5
+	c := newCluster(t, n, false)
+	c.one(1, n, true)
+
+	// 1. Leader a, cut off with only b, appends x at index 2 in its term.
+	// x reaches b but no majority.
+	a := c.checkOneLeader()
+	b := (a + 1) % n
+	rest := []int{(a + 2) % n, (a + 3) % n, (a + 4) % n}
+	for _, i := range rest {
+		c.disconnect(i)
+	}
+	if index, _, ok := c.raft(a).Start(2); !ok {
+		t.Skip("isolated leader stepped down; scenario needs a stale leader")
+	} else if index != 2 {
+		t.Fatalf("Start returned index %d, want 2", index)
+	}
+	time.Sleep(electionTimeout)
+
+	// 2. a and b leave. The other three elect e in a later term; e is then
+	// cut off and appends y at index 2, which nobody else receives.
+	c.disconnect(a)
+	c.disconnect(b)
+	for _, i := range rest {
+		c.connect(i)
+	}
+	e := c.checkOneLeader()
+	for _, i := range rest {
+		if i != e {
+			c.disconnect(i)
+		}
+	}
+	if _, _, ok := c.raft(e).Start(3); !ok {
+		t.Skip("isolated leader stepped down; scenario needs a stale leader")
+	}
+	c.disconnect(e)
+
+	// 3. a, b and a third server g (which lacks index 2) form a majority.
+	// a or b wins and copies x to g, so x is now on a majority, but only in
+	// an earlier term. A correct leader must not commit it on that basis.
+	var g, d int
+	for _, i := range rest {
+		if i != e {
+			g = i
+			break
+		}
+	}
+	for _, i := range rest {
+		if i != e && i != g {
+			d = i
+		}
+	}
+	c.connect(a)
+	c.connect(b)
+	c.connect(g)
+	c.checkOneLeader()
+	time.Sleep(2 * electionTimeout)
+
+	// 4. e returns with d and g. e's last entry has a later term than x, so
+	// e can win and overwrite index 2 with y. That is only safe if x was
+	// never committed.
+	c.disconnect(a)
+	c.disconnect(b)
+	c.connect(e)
+	c.connect(d)
+	c.one(4, 3, true)
+
+	for i := range n {
+		c.connect(i)
+	}
+	c.one(5, n, true)
+}
+
 // termChanged reports whether any running server has moved past term.
 func termChanged(c *cluster, term int) bool {
 	for i := range c.n {

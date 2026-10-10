@@ -84,7 +84,7 @@ scripts/stress.sh -n 200 -p 8 'Election|Replication'
 | Suite | Scenarios |
 |---|---|
 | Election | initial election, re-election after leader loss, no leader without quorum, 7-node churn, a partitioned leader stepping down |
-| Replication | basic agreement, follower failure and catch-up, no commit without majority, concurrent `Start`, a deposed leader with stale entries rejoining, fast back-off over 100-entry divergent logs, RPC count and byte budgets |
+| Replication | basic agreement, follower failure and catch-up, no commit without majority, concurrent `Start`, a deposed leader with stale entries rejoining, fast back-off over 100-entry divergent logs, the Figure 8 previous-term commit rule driven step by step, RPC count and byte budgets |
 | Persistence | full-cluster restart, repeated crashes of leader and followers, Figure 8 with constant leader crashes, Figure 8 on an unreliable network with long reordering |
 
 ## References
